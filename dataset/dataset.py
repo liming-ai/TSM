@@ -89,6 +89,7 @@ class UCF101Dataset(Dataset):
             label (int): the label of the current video.
         """
         self.load_annotations()
+        # (num_clips, T, H, W, C)
         self.video_frames = decode(
             self.video_names[index],
             self.num_clips,

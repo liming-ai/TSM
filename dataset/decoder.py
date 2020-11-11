@@ -1,10 +1,22 @@
 import os
+import torch
 import random
 import numpy as np
 from decord import VideoReader
 from decord import cpu, gpu
 
 def decode(video_name, num_clips, cfg):
+    """
+    Decord the video and return `num_clips` clips.
+
+    Args:
+        video_name (string): Video file name.
+        num_clips (int): Number of clips to sample.
+        cfg (cfgNode): configs
+
+    Returns:
+        torch.Tensor: (num_clips * cfg.num_frames * height * width * 3)
+    """
     video_path = os.path.join(cfg.root_path, video_name)
     vr = VideoReader(video_path, ctx=gpu(0))
 
@@ -31,7 +43,8 @@ def decode(video_name, num_clips, cfg):
         perframe_offsets = np.random.randint(cfg.sampling_interval, size=len(frame_inds))
         frame_inds += perframe_offsets
 
-    frame_inds = frame_inds.reshape((-1, cfg.num_frames))  # shape: (num_clips, num_frames)
+    # frame_inds shape: (num_clips, num_frames)
+    frame_inds = frame_inds.reshape((-1, cfg.num_frames))
 
     # Deal with frame index out of bounds
     safe_inds = frame_inds < len(vr)
@@ -40,7 +53,9 @@ def decode(video_name, num_clips, cfg):
     new_inds = (safe_inds * frame_inds + (unsafe_inds.T * last_ind).T)
     frame_inds = new_inds
 
-    
+    clips = [(vr.get_batch(clip_indices)).asnumpy() for clip_indices in frame_inds]
+
+    return torch.from_numpy(np.stack(clips))
 
 def get_train_clips(record, num_clips, clip_size):
     """
@@ -52,7 +67,6 @@ def get_train_clips(record, num_clips, clip_size):
         record (VideoReader): Video container.
         num_clips (int): Number of clips to sample from the video.
         clip_size (int): Number of frames per clip.
-        cfg (CfgNode): Configs
 
     Return:
         np.ndarray: Sampled frame indices in train mode.
@@ -80,6 +94,19 @@ def get_train_clips(record, num_clips, clip_size):
     return indices
 
 def get_test_clips(record, num_clips, clip_size):
+    """
+    For sparse sampling, `cfg.num_frames` and `cfg.sampling_interval` are equal to 1, means each clip sample 1 frame, so return `num_clips` frames' indices.
+
+    For dense sampling, return `num_clips` indices, each indices is the start index of a clip, each clip has `cfg.num_frames` * `cfg.sampling_interval` frames.
+
+    Args:
+        record (VideoReader): Video container.
+        num_clips (int): Number of clips to sample from the video.
+        clip_size (int): Number of frames per clip.
+
+    Returns:
+        numpy.array: Indices of clips
+    """
     video_length = len(record)
     average_duration = (video_length - clip_size + 1) / float(num_clips)
 
