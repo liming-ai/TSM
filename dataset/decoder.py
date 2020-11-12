@@ -22,8 +22,7 @@ def decode(video_name, num_clips, cfg):
 
     fps = int(vr.get_avg_fps())  # current fps
 
-    # number of frames of a clip
-    # 一个 clip 中帧的数目
+    # number of frames in a clip
     if cfg.target_fps is not None:
         clip_size = cfg.sampling_interval * cfg.num_frames / cfg.target_fps * fps
     else:
@@ -84,7 +83,7 @@ def get_train_clips(record, num_clips, clip_size):
         indices = np.sort(np.random.randint(
             video_length - clip_size + 1, size=num_clips
         ))
-    # video_length == clip_size NOTE: think why???
+    # video_length == clip_size why?
     elif average_duration == 0:
         ratio = (video_length - clip_size + 1.0) / num_clips
         indices = np.round(np.arange(num_clips) * ratio)
@@ -112,7 +111,7 @@ def get_test_clips(record, num_clips, clip_size):
 
     if video_length > clip_size - 1:
         base_indices = np.arange(num_clips) * average_duration
-        indices = (base_indices + average_duration / 2.0).astype(np.int)
+        indices = (base_indices + average_duration / 2.0).astype(np.int)  # why?
     else:
         indices = np.zeros((num_clips, ), dtype=np.int)
 
