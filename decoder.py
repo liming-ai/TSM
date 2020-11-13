@@ -25,7 +25,8 @@ def decode(video_name, num_clips, cfg):
 
     # number of frames in a clip
     if cfg.target_fps is not None:
-        clip_size = cfg.sampling_interval * cfg.num_frames / cfg.target_fps * fps
+        clip_size = \
+            cfg.sampling_interval * cfg.num_frames / cfg.target_fps * fps
     else:
         clip_size = cfg.sampling_interval * cfg.num_frames
 

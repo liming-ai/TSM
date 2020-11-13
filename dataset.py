@@ -88,8 +88,8 @@ class UCF101Dataset(Dataset):
             index (int): the video index
 
         Returns:
-            frames (tensor): the sampled frames from the video, the dimension is `channel`*`num_frames`*`height`*`width`.
-            label (int): the label of the current video.
+            (torch.tensor or list): for training and validation, return tensor with shape (N, C, H, W), for testing, return a list, the length of list is depended on three-crop or ten-crop testing strategy, each element of list is a tensor with shape (N, C, H, W), means a crop of sampled frames.
+            (torch.tensor): class of a video, shape is torch.Size([1])
         """
         self.load_annotations()
         # numpy.ndarray (num_clips, T, H, W, C)
@@ -107,7 +107,7 @@ class UCF101Dataset(Dataset):
             self.video_frames = utils.random_crop(self.video_frames, cfg.random_size)
         elif self.mode in ["test"]:
             self.video_frames = utils.uniform_crop(
-                self.video_frames, cfg.test_strategy
+                self.video_frames, cfg.test_strategy, cfg.test_crop_size
             )
 
         return self.video_frames, torch.tensor(self.video_labels)
