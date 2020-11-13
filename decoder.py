@@ -5,6 +5,7 @@ import numpy as np
 from decord import VideoReader
 from decord import cpu, gpu
 
+
 def decode(video_name, num_clips, cfg):
     """
     Decord the video and return `num_clips` clips.
@@ -15,7 +16,7 @@ def decode(video_name, num_clips, cfg):
         cfg (cfgNode): configs
 
     Returns:
-        torch.Tensor: (num_clips * cfg.num_frames * height * width * 3)
+        numpy.ndarray: (num_clips * cfg.num_frames * height * width * 3)
     """
     video_path = os.path.join(cfg.root_path, video_name)
     vr = VideoReader(video_path, ctx=gpu(0))
@@ -54,7 +55,8 @@ def decode(video_name, num_clips, cfg):
 
     clips = [(vr.get_batch(clip_indices)).asnumpy() for clip_indices in frame_inds]
 
-    return torch.from_numpy(np.stack(clips))
+    return np.stack(clips)
+
 
 def get_train_clips(record, num_clips, clip_size):
     """
@@ -91,6 +93,7 @@ def get_train_clips(record, num_clips, clip_size):
         indices = np.zeros((num_clips, ))
 
     return indices
+
 
 def get_test_clips(record, num_clips, clip_size):
     """

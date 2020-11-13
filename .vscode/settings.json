@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/home/liming/anaconda3/envs/tsm/bin/python"
+    "python.pythonPath": "/home/liming/anaconda3/envs/tsm/bin/python",
+    "editor.wordWrap": "on"
 }

@@ -2,10 +2,10 @@ import os
 import random
 from torch.utils.data import Dataset
 
-import utils.logging as logging
+import logging as logging
 
 from decoder import decode
-from . import utils as utils
+import utils
 
 logger = logging.get_logger(__name__)
 
@@ -55,6 +55,7 @@ class UCF101Dataset(Dataset):
 
         self.txt_file = os.path.join(self.mode.root_path, "{}.txt".format(mode))
 
+
     def load_annotations(self):
         """
         Load annotations from txt file.
@@ -70,12 +71,14 @@ class UCF101Dataset(Dataset):
                 # e.g. 100
                 self.video_labels.append(int(line[1]))
 
+
     def __len__(self):
         """
         Returns:
             (int): the number of videos in the dataset
         """
         return len(self.video_labels)
+
 
     def __getitem__(self, index):
         """
@@ -89,19 +92,22 @@ class UCF101Dataset(Dataset):
             label (int): the label of the current video.
         """
         self.load_annotations()
-        # (num_clips, T, H, W, C)
+        # numpy.ndarray (num_clips, T, H, W, C)
         self.video_frames = decode(
             self.video_names[index],
             self.num_clips,
             self.cfg
         )
-        self.video_frames = utils.normalize(self.video_frames)
-        self.video_frames = utils.spatial_sampling(
-            self.video_frames,
-            self.cfg.min_scale,
-            self.cfg.max_scale,
-            self.cfg.crop_size,
-            self.cfg.random_horizontal_flip,
-        )
+        # Normalize and transform numpy.array to torch.tensor
+        self.video_frames = utils.normalize(self.video_frames, cfg.mean, cfg.std)
+        # (N, H, W, C) -> (N, C, H, W), N = num_clips*cfg.num_frames
+        self.video_frames = torch.from_numpy(self.video_frames).permute(0, 3, 1, 2)
 
-        return self.video_frames, self.video_labels
+        if self.mode in ["train", "val"]:
+            self.video_frames = utils.random_crop(self.video_frames, cfg.random_size)
+        elif self.mode in ["test"]:
+            self.video_frames = utils.uniform_crop(
+                self.video_frames, cfg.test_strategy
+            )
+
+        return self.video_frames, torch.tensor(self.video_labels)
