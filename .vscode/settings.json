@@ -1,6 +1,5 @@
 {
     "python.pythonPath": "/home/liming/anaconda3/envs/tsm/bin/python",
-    "editor.wordWrap": "bounded",
     "python.linting.ignorePatterns": [],
     "cornflakes.linter.run": "off",
     "editor.codeActionsOnSave": null,

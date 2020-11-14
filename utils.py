@@ -12,7 +12,7 @@ def three_crop(video_frames, crop_size):
     Crop images into three crops with equal intervals along the shorter side.
 
     Args:
-        video_frames (torch.tensor): input video frames with shape (N, C, H, W).
+        video_frames (torch.Tensor): input video frames with shape (N, C, H, W).
         crop_size (int): output size of cropped image.
 
     Returns:
@@ -84,7 +84,7 @@ def ten_crop(video_frames, crop_size):
     Crop images into ten crops, including top-left, top-right, bottom-left, bottom-right, center-crop and their horizontal flips.
 
     Args:
-        video_frames (torch.tensor): input video frames with shape (N, C, H, W).
+        video_frames (torch.Tensor): input video frames with shape (N, C, H, W).
         crop_size (int): output size of cropped image.
 
     Returns:
@@ -128,11 +128,11 @@ def random_crop(video_frames, random_size):
     For train/val mode, each frame is randomly cropped so that its short side ranges in [256, 320] pixels and keep original aspect ratio.
 
     Args:
-        video_frames (torch.tensor): input video frames with shape (N, C, H, W)
+        video_frames (torch.Tensor): input video frames with shape (N, C, H, W)
         random_size (list): [min_scale, max_scale], min_scale is the minimal size to scale the frames, max_scale is the maximal size to scale the frames.
 
     Return:
-        torch.tensor: Scaled frames with shape (N, C, H, W)
+        torch.Tensor: Scaled frames with shape (N, C, H, W)
     """
     size = int(round(np.random.uniform(min_size, max_size)))
 
@@ -166,7 +166,7 @@ def uniform_crop(video_frames, sampling_strategy, crop_size):
         2. Ten-crop: 4 cornor crops and 1 center crop of size 224*224, then flips these crops, ususally for middle dataset like Something-Something or small dataset like UCF101.
 
     Args:
-        video_frames (torch.tensor): input video frames with shape (N, C, H, W)
+        video_frames (torch.Tensor): input video frames with shape (N, C, H, W)
         sampling_strategy (string): three-crop or two-crop
 
     Return:
@@ -182,3 +182,20 @@ def uniform_crop(video_frames, sampling_strategy, crop_size):
         return three_crop(video_frames, crop_size)
     elif sampling_strategy == "ten-crop":
         return ten_crop(video_frames, crop_size)
+
+
+def horizontal_flip(video_frames, flip_probability):
+    """
+    Horizontal flip video frames with given probability.
+
+    Args:
+        video_frames (torch.Tensor): input video frames with shape (N, C, H, W).
+        flip_probability (float): the probability of horizontal flipping.
+
+    Returns:
+        (torch.Tensor): the horizontal flipped video frames.
+    """
+    if torch.rand(1) < torch.Tensor(flip_probability):
+        return torchvision.transforms.functional.hflip(video_frames)
+
+    return video_frames

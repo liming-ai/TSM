@@ -88,8 +88,8 @@ class UCF101Dataset(Dataset):
             index (int): the video index
 
         Returns:
-            (torch.tensor or list): for training and validation, return tensor with shape (N, C, H, W), for testing, return a list, the length of list is depended on three-crop or ten-crop testing strategy, each element of list is a tensor with shape (N, C, H, W), means a crop of sampled frames.
-            (torch.tensor): class of a video, shape is torch.Size([1])
+            (torch.Tensor or list): for training and validation, return tensor with shape (N, C, H, W), for testing, return a list, the length of list is depended on three-crop or ten-crop testing strategy, each element of list is a tensor with shape (N, C, H, W), means a crop of sampled frames.
+            (torch.Tensor): class of a video, shape is torch.Size([1])
         """
         self.load_annotations()
         # numpy.ndarray (num_clips, T, H, W, C)
@@ -98,13 +98,21 @@ class UCF101Dataset(Dataset):
             self.num_clips,
             self.cfg
         )
-        # Normalize and transform numpy.array to torch.tensor
-        self.video_frames = utils.normalize(self.video_frames, cfg.mean, cfg.std)
+        # Normalize and transform numpy.array to torch.Tensor
+        self.video_frames = utils.normalize(
+            self.video_frames, cfg.mean, cfg.std
+        )
         # (N, H, W, C) -> (N, C, H, W), N = num_clips*cfg.num_frames
-        self.video_frames = torch.from_numpy(self.video_frames).permute(0, 3, 1, 2)
+        self.video_frames = \
+            torch.from_numpy(self.video_frames).permute(0, 3, 1, 2)
 
         if self.mode in ["train", "val"]:
-            self.video_frames = utils.random_crop(self.video_frames, cfg.random_size)
+            self.video_frames = utils.random_crop(
+                self.video_frames, cfg.random_size
+            )
+            self.video_frames = utils.horizontal_flip(
+                self.video_frames, cfg.horizontal_flip
+            )
         elif self.mode in ["test"]:
             self.video_frames = utils.uniform_crop(
                 self.video_frames, cfg.test_strategy, cfg.test_crop_size
