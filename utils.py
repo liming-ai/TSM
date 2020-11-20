@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import cv2
 import mmcv
+import math
 
 
 # N, C, H, W
@@ -26,9 +27,9 @@ def three_crop(video_frames, crop_size):
     new_width = crop_size
 
     if width < height:
-        new_height = int(math.floor((float(height) / width) * size))
+        new_height = int(math.floor((float(height) / width) * crop_size))
     else:
-        new_width = int(math.floor((float(width) / height) * size))
+        new_width = int(math.floor((float(width) / height) * crop_size))
 
     # change the shorter side to crop_size and keep aspect ratio
     video_frames = torch.nn.functional.interpolate(
@@ -45,13 +46,13 @@ def three_crop(video_frames, crop_size):
         duration = (new_width - new_height) // (crop_num - 1)
 
         left_crop = torchvision.transforms.functional.crop(
-            frame,  0, 0, crop_size, crop_size
+            video_frames,  0, 0, crop_size, crop_size
         )
         center_crop = torchvision.transforms.functional.crop(
-            frame, 0, duration, crop_size, crop_size
+            video_frames, 0, duration, crop_size, crop_size
         )
         right_crop = torchvision.transforms.functional.crop(
-            frame, 0, duration*2, crop_size, crop_size
+            video_frames, 0, duration*2, crop_size, crop_size
         )
 
         cropped_video_frames.append(left_crop)
@@ -63,13 +64,13 @@ def three_crop(video_frames, crop_size):
         duration = (new_height - new_width) // (crop_num - 1)
 
         top_crop = torchvision.transforms.functional.crop(
-            frame, 0, 0, crop_size, crop_size
+            video_frames, 0, 0, crop_size, crop_size
         )
         center_crop = torchvision.transforms.functional.crop(
-            frame, duration, 0, crop_size, crop_size
+            video_frames, duration, 0, crop_size, crop_size
         )
         bottom_crop = torchvision.transforms.functional.crop(
-            frame, duration*2, 0, crop_size, crop_size
+            video_frames, duration*2, 0, crop_size, crop_size
         )
 
         cropped_video_frames.append(top_crop)
@@ -111,11 +112,14 @@ def normalize(video_frames, mean, std):
     (num_clips, T, H, W, C) = video_frames.shape
     video_frames = video_frames.reshape(-1, H, W, C)
 
+    mean = np.array(mean)
+    std = np.array(std)
+
     # The calculation can refer to https://github.com/open-mmlab/mmcv/blob/c6c230df1b780976ee99f59e4644941967db39f9/mmcv/image/photometric.py#L24
     mean = np.float64(mean.reshape(1, -1))
     stdinv = 1 / np.float64(std.reshape(1, -1))
     # # cv2 inplace normalization does not accept uint8
-    assert img.dtype != np.uint8
+    assert video_frames.dtype != np.uint8
     for frame in video_frames:
         cv2.subtract(frame, mean, frame)    # inplace
         cv2.multiply(frame, stdinv, frame)  # inplace
@@ -134,13 +138,13 @@ def random_crop(video_frames, random_size):
     Return:
         torch.Tensor: Scaled frames with shape (N, C, H, W)
     """
+    min_size, max_size = random_size[0], random_size[1]
     size = int(round(np.random.uniform(min_size, max_size)))
 
     height = video_frames.shape[2]
-    width = video_frames[3]
+    width = video_frames.shape[3]
 
-    if (width <= height and width == size) or (
-        height <= width and height == size):
+    if (width <= height and width == size) or (height <= width and height == size):
         return video_frames
 
     new_width = size
@@ -195,7 +199,7 @@ def horizontal_flip(video_frames, flip_probability):
     Returns:
         (torch.Tensor): the horizontal flipped video frames.
     """
-    if torch.rand(1) < torch.Tensor(flip_probability):
+    if torch.rand(1) < torch.Tensor([flip_probability]):
         return torchvision.transforms.functional.hflip(video_frames)
 
     return video_frames

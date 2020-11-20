@@ -1,13 +1,15 @@
 import os
 import random
+import torch
 from torch.utils.data import Dataset
 
 import logging as logging
 
 from decoder import decode
 import utils
+import argparse
 
-logger = logging.get_logger(__name__)
+# logger = logging.get_logger(__name__)
 
 
 class UCF101Dataset(Dataset):
@@ -42,7 +44,7 @@ class UCF101Dataset(Dataset):
         self.cfg = cfg
         self.mode = mode
 
-        assert self.mode in [
+        assert mode in [
             'train',
             'val',
             'test'
@@ -53,7 +55,7 @@ class UCF101Dataset(Dataset):
         elif mode in ["test"]:
             self.num_clips = cfg.test_num_clips * cfg.test_num_crops
 
-        self.txt_file = os.path.join(self.mode.root_path, "{}.txt".format(mode))
+        self.txt_file = os.path.join(self.cfg.root_path, "ucf101_{}_split_1_videos.txt".format(mode))
 
 
     def load_annotations(self):
@@ -67,7 +69,7 @@ class UCF101Dataset(Dataset):
             for line in enumerate(f.read().splitlines()):
                 line = line[-1].split()
                 # e.g. YoYo/v_YoYo_g17_c04.avi
-                self.video_names.append(line[0])
+                self.video_names.append("videos/" + line[0])
                 # e.g. 100
                 self.video_labels.append(int(line[1]))
 
@@ -96,11 +98,12 @@ class UCF101Dataset(Dataset):
         self.video_frames = decode(
             self.video_names[index],
             self.num_clips,
-            self.cfg
+            self.cfg,
+            self.mode
         )
         # Normalize and transform numpy.array to torch.Tensor
         self.video_frames = utils.normalize(
-            self.video_frames, cfg.mean, cfg.std
+            self.video_frames, self.cfg.mean, self.cfg.std
         )
         # (N, H, W, C) -> (N, C, H, W), N = num_clips*cfg.num_frames
         self.video_frames = \
@@ -108,14 +111,43 @@ class UCF101Dataset(Dataset):
 
         if self.mode in ["train", "val"]:
             self.video_frames = utils.random_crop(
-                self.video_frames, cfg.random_size
+                self.video_frames, self.cfg.random_size
             )
             self.video_frames = utils.horizontal_flip(
-                self.video_frames, cfg.horizontal_flip
-            )
-        elif self.mode in ["test"]:
-            self.video_frames = utils.uniform_crop(
-                self.video_frames, cfg.test_strategy, cfg.test_crop_size
+                self.video_frames, self.cfg.horizontal_flip
             )
 
         return self.video_frames, torch.tensor(self.video_labels)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="TSM Dataloader Test")
+    parser.add_argument('--train_num_clips', type=int, default=8)
+    parser.add_argument('--num_frames', type=int, default=1)
+    parser.add_argument('--sampling_interval', type=int, default=1)
+    parser.add_argument('--test_num_clips', type=int, default=10)
+    parser.add_argument('--test_num_crops', type=int, default=3)
+    parser.add_argument('--root_path', type=str, default="/home/liming/code/video/reproduce/TSM/data")
+    parser.add_argument('--random_size', type=list, default=[256, 320])
+    parser.add_argument('--horizontal_flip', type=float, default=0.5)
+    parser.add_argument('--test_strategy', type=str, default="three-crop")
+    parser.add_argument('--test_crop_size', type=int, default=224)
+    parser.add_argument('--mean', type=list, default=[0, 0, 0])
+    parser.add_argument('--std', type=list, default=[1, 1, 1])
+    parser.add_argument('--target_fps', type=int, default=None)
+    parser.add_argument('--temporal_jitter', type=bool, default=None)
+
+    args = parser.parse_args()
+    mode = "test"
+
+    train_dataset = UCF101Dataset(args, mode)
+
+    data, label = train_dataset.__getitem__(222)
+
+    if mode in ["train", "val"]:
+        print("Loading training data...")
+        print(data.shape)
+    elif mode in ["test"]:
+        print("Loading test data...")
+        print(len(data))
+        print(data[0].shape)

@@ -35,11 +35,12 @@ class TemporalShift(nn.Module):
         Returns:
             torch.Tensor: The shifted feature map with shape (n, c, h, w)
         """
-        n, c, h, w = x.shape
+        nt, c, h, w = x.shape
+        batch_size = nt // num_clips
 
-        # [N // num_clips, num_clips, C, H*W]
+        # [batch, T, C, H*W]
         # can't use 5 dimensional array on PPL2D backend for caffe
-        x = x.view(-1, num_clips, c, h*w)
+        x = x.view(batch_size, num_clips, c, h*w)
         # get shift fold
         fold = c // shift_div
 
@@ -61,7 +62,7 @@ class TemporalShift(nn.Module):
 
         out = torch.cat((left_split, mid_split, right_split), 2)
 
-        return out.view(n, c, h, w)
+        return out.view(nt, c, h, w)
 
 
 class ResNetTSM(nn.Module):

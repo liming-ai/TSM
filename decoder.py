@@ -4,9 +4,10 @@ import random
 import numpy as np
 from decord import VideoReader
 from decord import cpu, gpu
+from PIL import Image
 
 
-def decode(video_name, num_clips, cfg):
+def decode(video_name, num_clips, cfg, mode):
     """
     Decord the video and return `num_clips` clips.
 
@@ -19,6 +20,7 @@ def decode(video_name, num_clips, cfg):
         numpy.ndarray: (num_clips * cfg.num_frames * height * width * 3)
     """
     video_path = os.path.join(cfg.root_path, video_name)
+
     vr = VideoReader(video_path, ctx=gpu(0))
 
     fps = int(vr.get_avg_fps())  # current fps
@@ -30,15 +32,16 @@ def decode(video_name, num_clips, cfg):
     else:
         clip_size = cfg.sampling_interval * cfg.num_frames
 
-    if cfg.mode in ["train", "val"]:
+    if mode in ["train", "val"]:
         frame_inds = get_train_clips(vr, num_clips, clip_size)
-    elif cfg.mode in ["test"]:
+    elif mode in ["test"]:
         frame_inds = get_test_clips(vr, num_clips, clip_size)
 
     # frame_inds is start indexes of each clip, now get all the selected frames' indexes.
     frame_inds = frame_inds[:, None] + \
                  np.arange(cfg.num_frames)[None, :] * cfg.sampling_interval
     frame_inds = np.concatenate(frame_inds)
+
     # Adding temporal jitter
     if cfg.temporal_jitter:
         perframe_offsets = np.random.randint(cfg.sampling_interval, size=len(frame_inds))
@@ -54,7 +57,7 @@ def decode(video_name, num_clips, cfg):
     new_inds = (safe_inds * frame_inds + (unsafe_inds.T * last_ind).T)
     frame_inds = new_inds
 
-    clips = [(vr.get_batch(clip_indices)).asnumpy() for clip_indices in frame_inds]
+    clips = [(vr.get_batch(clip_indices)).asnumpy().astype(np.float64) for clip_indices in frame_inds]
 
     return np.stack(clips)
 
