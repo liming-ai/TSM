@@ -5,11 +5,29 @@ from torch.utils.data import Dataset
 
 import logging as logging
 
-from decoder import decode
 import utils
 import argparse
+import numpy as np
+from PIL import Image
+import torchvision
+from utils import random_crop, test_crop
 
 # logger = logging.get_logger(__name__)
+class VideoRecord(object):
+    def __init__(self, line):
+        self._data = line
+
+    @property
+    def path(self):
+        return self._data[0]
+
+    @property
+    def num_frames(self):
+        return int(self._data[1])
+
+    @property
+    def label(self):
+        return int(self._data[2])
 
 
 class UCF101Dataset(Dataset):
@@ -22,132 +40,223 @@ class UCF101Dataset(Dataset):
     The annotation file is a txt file with multiple lines, and each line
     indicates a sample Video with the filepath (without suffix) and label.
 
-    Example:
+    Annotation File Example:
         IceDancing/v_IceDancing_g18_c05.avi 43
         BoxingPunchingBag/v_BoxingPunchingBag_g20_c03.avi 16
         CuttingInKitchen/v_CuttingInKitchen_g09_c02.avi 24
-    """
-    def __init__(self, cfg, mode):
-        """
-        Construct the UCF101 video loader
 
-        Args:
-            cfg (CfgNode): Configs
-            mode (string): Options includes `train`, `val`, or `test` mode.
-                For the train and val mode, the data loader will take data
-                from the train or val set, and sample one clip per video.
-                For the test mode, the data loader will take data from test set,
-                and sample multiple clips per video.
-        """
+    Args:
+        data_path (str): Directory that containing the frames or videos.
+        anno_path (str): Path to the annotation file.
+        mode (str): Must be 'train' 'val' or 'test'.
+        sample_strategy (str): Must be 'sparse' or 'dense'.
+            1. For 'sparse' sampling strategy, the whole video is divided into
+               `num_segments` segments, and we only sample 1 frame from a
+               segment, so `num_frames` and `sample_interval` must be 1.
+            2. For 'dense' sampling strategy, `num_segments` must be 1, means
+               the whole video is the only segment. We totally sample
+               `num_frames` frames from the segment, each frame is sampled with
+               interval `sample_interval`.
+
+        num_frames (int): Num of frames in a segment.
+        sample_interval (int): The distance required to sample a frame.
+        num_segments (int): Num of segments.
+
+        test_num_clips (int): Num of clips for testing, usually average their
+            softmax value as the final result, must be 10, 3 or 1.
+        test_num_crops (int): Num of crops for testing, must be 10, 5 or 1,
+            means ten-crop, five-crop and center-crop.
+
+        crop_size (int): Size for cropping.
+        random_shift (bool): Weather random sample indices when mode=`train`
+        image_template (str): Name template for dataset.
+    """
+    def __init__(self, data_path, anno_path, transforms=None, mode="train", sample_strategy="sparse",
+                 num_frames=1, sample_interval=1, num_segments=8, test_num_clips=10, test_num_crops=3,
+                 crop_size=224, random_shift=True, image_template="img_{:05d}.jpg"):
+
         super().__init__()
 
-        self.cfg = cfg
-        self.mode = mode
-
         assert mode in [
-            'train',
-            'val',
-            'test'
-        ], "Split '{}' not supported for UCF101".format(self.mode)
+            'train', 'val', 'test'
+        ], "Mode must be 'train', 'val' or 'test' to obtain dataset."
 
-        if mode in ["train", "val"]:
-            self.num_clips = cfg.train_num_clips
-        elif mode in ["test"]:
-            self.num_clips = cfg.test_num_clips * cfg.test_num_crops
+        if mode in ['train', 'val']:
+            if sample_strategy == 'dense':
+                assert num_segments == 1
+            elif sample_strategy == 'sparse':
+                assert num_frames == 1
+                assert sample_interval == 1
+            else:
+                raise ValueError("Sample strategy must be 'sparse' or 'dense'")
 
-        self.txt_file = os.path.join(self.cfg.root_path, "ucf101_{}_split_1_videos.txt".format(mode))
+        self.data_path = data_path
+        self.anno_path = anno_path
+        self.mode = mode
+        self.sample_strategy = sample_strategy
+        self.random_shift = random_shift
+        self.image_template = image_template
+        self.transforms = transforms
+        self.crop_size = crop_size
+
+        self.num_frames = num_frames
+        self.sample_interval = sample_interval
+        self.num_segments = num_segments
+
+        self.test_num_clips = test_num_clips
+        self.test_num_crops = test_num_crops
+
+        self._load_annotations()
 
 
-    def load_annotations(self):
-        """
-        Load annotations from txt file.
-        """
-        self.video_names = []
-        self.video_labels = []
+    def _load_annotations(self):
+        videos_info = [x.strip().split(' ') for x in open(self.anno_path)]
+        self.videos_list = [VideoRecord(item) for item in videos_info]
 
-        with open(self.txt_file, "r") as f:
-            for line in enumerate(f.read().splitlines()):
-                line = line[-1].split()
-                # e.g. YoYo/v_YoYo_g17_c04.avi
-                self.video_names.append("videos/" + line[0])
-                # e.g. 100
-                self.video_labels.append(int(line[1]))
+        print("Totally {} videos for {} dataset.".format(len(self.videos_list), self.mode))
+
+
+    def _train_random_sample(self, record):
+        if self.sample_strategy == 'dense':
+            # sample_position is the max indices to sample a segment
+            # the length of the segment is self.num_frames * self.sample_interval
+            sample_position = max(1, record.num_frames - self.num_frames * self.sample_interval + 1)
+            # random choose a index from [0, sample_position - 1) as the start index of the segment
+            start_idx = 0 if sample_position == 1 else np.random.randint(0, sample_position - 1)
+            # get the final index list, each element is the index of a frame used to train
+            indices = [(idx * self.sample_interval + start_idx) % record.num_frames for idx in range(self.num_frames)]
+            # the index in data_path is started from 1, e.g. rawframes/YoYo/v_YoYo_g01_c01/img_00001.jpg
+            return np.array(indices) + 1
+        elif self.sample_strategy == 'sparse':
+            # divide the whole video into self.num_segment segments.
+            num_frames_per_segment = record.num_frames // self.num_segments
+            # random choose a frame in a segment
+            if num_frames_per_segment > 0:
+                # the first index of each segment.
+                start_indice_per_segment = np.array(
+                    [(idx * num_frames_per_segment) for idx in range(self.num_segments)]
+                )
+                # random choose a frame from each segment.
+                indices = start_indice_per_segment + np.random.randint(
+                    num_frames_per_segment, size=self.num_segments
+                )
+            else:
+                indices = np.zeros((self.num_segments,))
+            return indices + 1
+
+
+    def _train_uniform_sample(self, record):
+        if self.sample_strategy == 'dense':
+            sample_position = max(1, record.num_frames - self.num_frames * self.sample_interval + 1)
+            start_idx = 0 if sample_position == 1 else np.random.randint(0, sample_position - 1)
+            indices = [(idx * self.sample_interval + start_idx) for idx in range(self.num_frames)]
+            return np.array(indices) + 1
+        elif self.sample_strategy == 'sparse':
+            num_frames_per_segment = record.num_frames // self.num_segments
+            if num_frames_per_segment > 0:
+                start_indice_per_segment = np.array(
+                    [(idx * num_frames_per_segment) for idx in range(self.num_segments)]
+                )
+                # choose the mid frame in a segment
+                indices = start_indice_per_segment + np.multiply(
+                    np.ones((self.num_segments,)), int(num_frames_per_segment / 2.0)
+                )
+                # change the type of indices' value from float to int
+                indices = indices.astype(np.int64)
+            else:
+                indices = np.zeros((self.num_segments,))
+            return indices + 1
+
+
+    def _test_sample(self, record):
+        num_frames_per_segment = record.num_frames // self.num_segments
+        # when self.num_clips == 1, using sparse sampling, choose the mid frame each segment
+        if self.test_num_clips == 1:
+            assert self.sample_strategy == 'sparse', "when test_num_clips is 1 or 2, must use sparse sampling"
+            start_indice_per_segment = np.array(
+                [(idx * num_frames_per_segment) for idx in range(self.num_segments)]
+            )
+            indices = start_indice_per_segment + np.multiply(
+                np.ones((self.num_segments,)), int(num_frames_per_segment / 2.0)
+            )
+            indices = indices.astype(np.int64)
+            return indices + 1
+        # when self.num_clips == 2, using sparse sampling
+        # choose the mid and the last frame each segment
+        elif self.test_num_clips == 2:
+            assert self.sample_strategy == 'sparse', "when test_num_clips is 1 or 2, must use sparse sampling"
+            num_frames_per_segment = record.num_frames // self.num_segments
+            start_indice_per_segment = [(idx * num_frames_per_segment) for idx in range(self.num_segments)]
+            # choose the mid frame
+            first_clip_indices = [(start_index + num_frames_per_segment // 2) for start_index in start_indice_per_segment]
+            # choose the last frame
+            second_clip_indices = [(start_index + num_frames_per_segment) for start_index in start_indice_per_segment]
+            indices = np.concatenate((first_clip_indices, second_clip_indices))
+            return indices + 1
+        # when self.test_num_clips > 2, using dense sample strategy
+        elif self.test_num_clips > 2:
+            assert self.sample_strategy == 'dense', "when test_num_clips > 2, must use dense sampling"
+            sample_position = max(1, record.num_frames - self.num_frames * self.sample_interval + 1)
+            # uniformly get `test_num_clips` start indexes
+            # each start index is corresponding to a clip, which used to test
+            start_list = np.linspace(0, sample_position - 1, num=self.test_num_clips, dtype=int)
+            indices = []
+            for start_idx in start_list.tolist():
+                indices += [(idx * self.sample_interval + start_idx) % record.num_frames for idx in range(self.num_frames)]
+            return np.array(indices) + 1
+        else:
+            raise ValueError("test_num_clips must be a positive number")
+
+
+    def _load_image(self, record, idx):
+        try:
+            return Image.open(os.path.join(self.data_path, record.path, self.image_template.format(idx))).convert('RGB')
+        except Exception:
+            print('error loading image: ', os.path.join(self.data_path, self.image_template.format(idx)))
 
 
     def __len__(self):
-        """
-        Returns:
-            (int): the number of videos in the dataset
-        """
-        return len(self.video_labels)
+        return len(self.videos_list)
 
 
     def __getitem__(self, index):
-        """
-        Given the video index, return the list of frames and their frames.
+        record = self.videos_list[index]
 
-        Args:
-            index (int): the video index
+        if self.mode in ['train', 'val']:
+            indices = self._train_random_sample(record) if self.random_shift else self._train_uniform_sample(record)
+        elif self.mode in ['test']:
+            indices = self._test_sample(record)
 
-        Returns:
-            (torch.Tensor or list): for training and validation, return tensor with shape (N, C, H, W), for testing, return a list, the length of list is depended on three-crop or ten-crop testing strategy, each element of list is a tensor with shape (N, C, H, W), means a crop of sampled frames.
-            (torch.Tensor): class of a video, shape is torch.Size([1])
-        """
-        self.load_annotations()
-        # numpy.ndarray (num_clips, T, H, W, C)
-        self.video_frames = decode(
-            self.video_names[index],
-            self.num_clips,
-            self.cfg,
-            self.mode
-        )
-        # Normalize and transform numpy.array to torch.Tensor
-        self.video_frames = utils.normalize(
-            self.video_frames, self.cfg.mean, self.cfg.std
-        )
-        # (N, H, W, C) -> (N, C, H, W), N = num_clips*cfg.num_frames
-        self.video_frames = \
-            torch.from_numpy(self.video_frames).permute(0, 3, 1, 2)
+        images = []
+        for index in indices:
+            image = self._load_image(record, index)
+            images.append(image)
 
-        if self.mode in ["train", "val"]:
-            self.video_frames = utils.random_crop(
-                self.video_frames, self.cfg.random_size
-            )
-            self.video_frames = utils.horizontal_flip(
-                self.video_frames, self.cfg.horizontal_flip
-            )
+        if self.mode in ['train', 'val']:
+            images = random_crop(images, self.crop_size)
+        elif self.mode == 'test':
+            images = test_crop(images, self.crop_size, self.test_num_crops)
 
-        return self.video_frames, torch.tensor(self.video_labels)
+        if self.transforms:
+            images = self.transforms(images)
+
+        return images, record.label
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TSM Dataloader Test")
-    parser.add_argument('--train_num_clips', type=int, default=8)
-    parser.add_argument('--num_frames', type=int, default=1)
-    parser.add_argument('--sampling_interval', type=int, default=1)
-    parser.add_argument('--test_num_clips', type=int, default=10)
-    parser.add_argument('--test_num_crops', type=int, default=3)
-    parser.add_argument('--root_path', type=str, default="/home/liming/code/video/reproduce/TSM/data")
-    parser.add_argument('--random_size', type=list, default=[256, 320])
-    parser.add_argument('--horizontal_flip', type=float, default=0.5)
-    parser.add_argument('--test_strategy', type=str, default="three-crop")
-    parser.add_argument('--test_crop_size', type=int, default=224)
-    parser.add_argument('--mean', type=list, default=[0, 0, 0])
-    parser.add_argument('--std', type=list, default=[1, 1, 1])
-    parser.add_argument('--target_fps', type=int, default=None)
-    parser.add_argument('--temporal_jitter', type=bool, default=None)
-
-    args = parser.parse_args()
-    mode = "test"
-
-    train_dataset = UCF101Dataset(args, mode)
+    train_dataset = UCF101Dataset(data_path='./data/rawframes',
+                                  anno_path='./data/ucf101_train_split_1_rawframes.txt',
+                                  transforms=None,
+                                  mode='test',
+                                  sample_strategy='dense',
+                                  num_frames=8,
+                                  sample_interval=8,
+                                  num_segments=1,
+                                  test_num_clips=10,
+                                  test_num_crops=3,
+                                  random_shift=True)
 
     data, label = train_dataset.__getitem__(222)
 
-    if mode in ["train", "val"]:
-        print("Loading training data...")
-        print(data.shape)
-    elif mode in ["test"]:
-        print("Loading test data...")
-        print(len(data))
-        print(data[0].shape)
+    print(len(data))
+    print(data[0])

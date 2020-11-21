@@ -1,37 +1,10 @@
 {
     "python.pythonPath": "/home/liming/anaconda3/envs/tsm/bin/python",
-    "python.linting.ignorePatterns": [],
-    "cornflakes.linter.run": "off",
     "editor.codeActionsOnSave": null,
-    "todohighlight.keywords": [
-        "DEBUG:",
-        "REVIEW:",
-        {
-            "text": "NOTE:",
-            "color": "red",
-            "backgroundColor": "yellow",
-            "overviewRulerColor": "grey"
-        },
-        {
-            "text": "HACK:",
-            "color": "#000",
-            "isWholeLine": false,
-        },
-        {
-            "text": "TODO:",
-            "color": "blue",
-            "border": "1px solid red",
-            "borderRadius": "2px", //NOTE: using borderRadius along with `border` or you will see nothing change
-            "backgroundColor": "yellow",
-            //other styling properties goes here ... 
-        },
-        {
-            "text": "why?",
-            "color": "yellow",
-            "border": "",
-            "borderRadius": "2px", //NOTE: using borderRadius along with `border` or you will see nothing change
-            "backgroundColor": "rgba(0,0,0,0)",
-            //other styling properties goes here ... 
-        }
-    ],
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.fontLigatures": null,
+    "editor.tokenColorCustomizations": null,
+    "python.formatting.provider": "black",
 }
