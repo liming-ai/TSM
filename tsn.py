@@ -12,7 +12,7 @@ class Identity(nn.Module):
 class SegmentConsensus(nn.Module):
     """Segment Consensus Module
 
-    In fact it's just a feature pooling module, there are three type of fusion in paper:
+    In fact it's just a pooling module, there are three type of pooling in paper:
     max, average and weighted average. But here we only implement average.
     For more details please see: `Temporal Segment Networks: Towards Good Practices for Deep Action Recognition`
     arXiv: https://arxiv.org/pdf/1608.00859.pdf
@@ -146,7 +146,7 @@ class TSN(nn.Module):
         print("Freezing BatchNorm2D expect the first one.")
         cnt = 0
         for m in self.backbone.modules():
-            if isinstance(m, nn.BatchNorm2D):
+            if isinstance(m, nn.BatchNorm2d):
                 cnt += 1
                 if cnt > 1:
                     m.eval()
@@ -156,7 +156,6 @@ class TSN(nn.Module):
 
     def forward(self, x):
         out = self.backbone(x)  # (bt, c, h, w) -> (bt, num_classes)
-        out = self.softmax(out)  # using softmax to transforms its value into probability
         out = out.view((-1, self.num_frames) + out.size()[1:])  # (bt, num_classes) -> (batch, time, num_classes)
         out = self.consensus(out)  # (batch, time, num_classes) -> (batch, 1, num_classes)
         out = out.squeeze(1)  # (batch, 1, num_classes) -> (batch, num_classes)

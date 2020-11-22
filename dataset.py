@@ -5,12 +5,11 @@ from torch.utils.data import Dataset
 
 import logging as logging
 
-import utils
 import argparse
 import numpy as np
 from PIL import Image
 import torchvision
-from utils import random_crop, test_crop
+from transforms import random_crop, test_crop
 
 # logger = logging.get_logger(__name__)
 class VideoRecord(object):
@@ -237,8 +236,13 @@ class UCF101Dataset(Dataset):
         elif self.mode == 'test':
             images = test_crop(images, self.crop_size, self.test_num_crops)
 
-        if self.transforms:
+        if self.transforms is not None:
             images = self.transforms(images)
+
+        if isinstance(images, list):
+            images = np.concatenate([np.array(image) for image in images])
+
+        images = torch.from_numpy(images).permute(2, 0, 1).float()
 
         return images, record.label
 
@@ -247,12 +251,12 @@ if __name__ == "__main__":
     train_dataset = UCF101Dataset(data_path='./data/rawframes',
                                   anno_path='./data/ucf101_train_split_1_rawframes.txt',
                                   transforms=None,
-                                  mode='test',
-                                  sample_strategy='dense',
-                                  num_frames=8,
-                                  sample_interval=8,
-                                  num_segments=1,
-                                  test_num_clips=10,
+                                  mode='train',
+                                  sample_strategy='sparse',
+                                  num_frames=1,
+                                  sample_interval=1,
+                                  num_segments=8,
+                                  test_num_clips=2,
                                   test_num_crops=3,
                                   random_shift=True)
 
