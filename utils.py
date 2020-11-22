@@ -7,6 +7,16 @@ import math
 
 
 def three_crop(image, crop_size):
+    """
+    Given a image, return a list of three cropped images.
+
+    Args:
+        image (PIL.Image): Input image.
+        crop_size (int): The needed size for cropping.
+
+    Returns:
+        list: Cropped images.
+    """
     crop_num = 3
 
     height = image.size[0]
@@ -80,6 +90,17 @@ def random_crop(images, crop_size):
 
 
 def test_crop(images, crop_size, num_crops):
+    """
+    Return cropped images with crop_size.
+
+    Args:
+        images (list): Input images.
+        crop_size (int): Cropped image's size.
+        num_crops (int): Must be 10, 3, or 1, representing ten-crop, three-crop and center-crop.
+
+    Returns:
+        list: The cropped images.
+    """
     cropped_images = []
     if num_crops == 1:
         for image in images:

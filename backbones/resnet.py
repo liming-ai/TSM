@@ -1,3 +1,6 @@
+# The whole code is copied from official PyTorch implementation of ResNet.
+# Please see `torchvision.models.resnet` for more details.
+
 import torch
 import torch.nn as nn
 import torchvision

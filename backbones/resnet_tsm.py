@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from .resnet import ResNet, resnet18, resnet34, resnet50, resnet101, resnet152
-
+from .resnet import resnet18, resnet34, resnet50, resnet101, resnet152
+import torchvision
 
 class TemporalShift(nn.Module):
     """
@@ -9,11 +9,11 @@ class TemporalShift(nn.Module):
 
     Args:
         net (nn.module): Module to make temporal shift.
-        num_clips (int): Number of frame clips. Defaults to 3.
+        num_clips (int): Number of frame clips. Defaults to 8.
         shift_div (int): Number of divisions for shift. Defaults to 8.
     """
 
-    def __init__(self, net, num_clips=3, shift_div=8):
+    def __init__(self, net, num_clips=8, shift_div=8):
         super().__init__()
         self.net = net
         self.num_clips = num_clips
@@ -93,6 +93,8 @@ class ResNetTSM(nn.Module):
             "resnet18", "resnet34", "resnet50", "resnet101", "resnet152"
         ], "Only support resnet18, resnet34, resnet50, resnet101, resnet152"
 
+        # You can also directly using model from PyTorch
+        # e.g. self.net = torchvision.models.resnet50()
         if backbone == "resnet18":
             self.net = resnet18(pretrained)
         elif backbone == "resnet34":
@@ -153,3 +155,28 @@ class ResNetTSM(nn.Module):
     def forward(self, x):
         self.make_temporal_layer()
         return self.net(x)
+
+
+def resnet18_tsm(num_clips, shift_div, shift_mode, pretrained):
+    return ResNetTSM("resnet18", num_clips, shift_div, shift_mode, pretrained)
+
+def resnet34_tsm(num_clips, shift_div, shift_mode, pretrained):
+    return ResNetTSM("resnet34", num_clips, shift_div, shift_mode, pretrained)
+
+def resnet50_tsm(num_clips, shift_div, shift_mode, pretrained):
+    return ResNetTSM("resnet50", num_clips, shift_div, shift_mode, pretrained)
+
+def resnet101_tsm(num_clips, shift_div, shift_mode, pretrained):
+    return ResNetTSM("resnet101", num_clips, shift_div, shift_mode, pretrained)
+
+def resnet152_tsm(num_clips, shift_div, shift_mode, pretrained):
+    return ResNetTSM("resnet152", num_clips, shift_div, shift_mode, pretrained)
+
+
+if __name__ == "__main__":
+    resnet_tsm_50 = ResNetTSM("resnet50", num_clips=8)
+    # batch size = 4, num_clips = 8
+    x = torch.randn(4 * 8, 3, 224, 224)
+    y = resnet_tsm_50(x)
+
+    print(y.shape)
