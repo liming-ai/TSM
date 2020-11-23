@@ -9,7 +9,8 @@ import argparse
 import numpy as np
 from PIL import Image
 import torchvision
-from transforms import random_crop, test_crop
+from transforms import random_crop, test_crop, GroupNormalize
+
 
 # logger = logging.get_logger(__name__)
 class VideoRecord(object):
@@ -189,7 +190,7 @@ class UCF101Dataset(Dataset):
             # choose the mid frame
             first_clip_indices = [(start_index + num_frames_per_segment // 2) for start_index in start_indice_per_segment]
             # choose the last frame
-            second_clip_indices = [(start_index + num_frames_per_segment) for start_index in start_indice_per_segment]
+            second_clip_indices = [(start_index + num_frames_per_segment - 1) for start_index in start_indice_per_segment]
             indices = np.concatenate((first_clip_indices, second_clip_indices))
             return indices + 1
         # when self.test_num_clips > 2, using dense sample strategy
@@ -211,7 +212,11 @@ class UCF101Dataset(Dataset):
         try:
             return Image.open(os.path.join(self.data_path, record.path, self.image_template.format(idx))).convert('RGB')
         except Exception:
-            print('error loading image: ', os.path.join(self.data_path, self.image_template.format(idx)))
+            print("=========================================")
+            print(self.data_path)
+            print(record.path)
+            print(self.image_template.format(idx))
+            print('error loading image: ', os.path.join(self.data_path, record.path, self.image_template.format(idx)))
 
 
     def __len__(self):
@@ -231,36 +236,25 @@ class UCF101Dataset(Dataset):
             image = self._load_image(record, index)
             images.append(image)
 
-        if self.mode in ['train', 'val']:
-            images = random_crop(images, self.crop_size)
-        elif self.mode == 'test':
-            images = test_crop(images, self.crop_size, self.test_num_crops)
-
         if self.transforms is not None:
             images = self.transforms(images)
 
-        if isinstance(images, list):
-            images = np.concatenate([np.array(image) for image in images])
-
-        images = torch.from_numpy(images).permute(2, 0, 1).float()
-
-        return images, record.label
+        return images
 
 
 if __name__ == "__main__":
-    train_dataset = UCF101Dataset(data_path='./data/rawframes',
-                                  anno_path='./data/ucf101_train_split_1_rawframes.txt',
-                                  transforms=None,
-                                  mode='train',
-                                  sample_strategy='sparse',
-                                  num_frames=1,
-                                  sample_interval=1,
-                                  num_segments=8,
-                                  test_num_clips=2,
-                                  test_num_crops=3,
-                                  random_shift=True)
+    from opts import parser
+    args = parser.parse_args()
+    transforms = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        GroupNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+    test_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='test',
+                                 sample_strategy=args.sample_strategy, num_frames=args.num_frames,
+                                 sample_interval=args.sample_interval, num_segments=args.num_segments,
+                                 test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
+                                 crop_size=args.crop_size, random_shift=args.random_shift)
 
-    data, label = train_dataset.__getitem__(222)
+    data, label = test_dataset.__getitem__(222)
 
-    print(len(data))
-    print(data[0])
+    print(data.shape)

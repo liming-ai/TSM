@@ -1,137 +1,165 @@
 import torchvision
 import random
+from PIL import Image, ImageOps
 import numpy as np
-import torch
-import cv2
+import numbers
 import math
+import torch
 
 
-def three_crop(image, crop_size):
-    """
-    Given a image, return a list of three cropped images.
+class GroupRandomCrop(object):
+    def __init__(self, crop_size):
+        self.worker = torchvision.transforms.RandomCrop(crop_size)
 
-    Args:
-        image (PIL.Image): Input image.
-        crop_size (int): The needed size for cropping.
-
-    Returns:
-        list: Cropped images.
-    """
-    crop_num = 3
-
-    height = image.size[0]
-    width = image.size[1]
-    new_height = crop_size
-    new_width = crop_size
-
-    if width < height:
-        new_height = int(math.floor((float(height) / width) * crop_size))
-    else:
-        new_width = int(math.floor((float(width) / height) * crop_size))
-    # import pdb; pdb.set_trace()
-    # change the shorter side to crop_size and keep aspect ratio
-    image_resizer = torchvision.transforms.Resize((new_height, new_width))
-    image = image_resizer(image)
-
-    cropped_images = list()
-
-    # crop along width
-    if new_height < new_width:
-        duration = (new_width - new_height) // (crop_num - 1)
-
-        left_crop = torchvision.transforms.functional.crop(
-            image,  0, 0, crop_size, crop_size
-        )
-        center_crop = torchvision.transforms.functional.crop(
-            image, 0, duration, crop_size, crop_size
-        )
-        right_crop = torchvision.transforms.functional.crop(
-            image, 0, duration*2, crop_size, crop_size
-        )
-
-        cropped_images.append(left_crop)
-        cropped_images.append(center_crop)
-        cropped_images.append(right_crop)
-
-    # crop along height
-    else:
-        duration = (new_height - new_width) // (crop_num - 1)
-
-        top_crop = torchvision.transforms.functional.crop(
-            image, 0, 0, crop_size, crop_size
-        )
-        center_crop = torchvision.transforms.functional.crop(
-            image, duration, 0, crop_size, crop_size
-        )
-        bottom_crop = torchvision.transforms.functional.crop(
-            image, duration*2, 0, crop_size, crop_size
-        )
-
-        cropped_images.append(top_crop)
-        cropped_images.append(center_crop)
-        cropped_images.append(bottom_crop)
-
-    return cropped_images
+    def __call__(self, images):
+        return [self.worker(image) for image in images]
 
 
-def ten_crop(image, crop_size):
-    return list(
-        torchvision.transforms.functional.ten_crop(image, crop_size, 0.5)
-    )
+class GroupCenterCrop(object):
+    def __init__(self, crop_size):
+        self.worker = torchvision.transforms.CenterCrop(crop_size)
+
+    def __call__(self, images)
+        return [self.worker(image) for image in images]
 
 
-def center_crop(image, crop_size):
-    return [torchvision.transforms.functional.center_crop(image, crop_size)]
+class GroupRandomHorizontalFlip(object):
+    def __init__(self, p=0.5):
+        self.worker = torchvision.transforms.RandomHorizontalFlip(p)
+
+    def __call__(self, images):
+        return [self.worker(image) for image in images]
 
 
-def random_crop(images, crop_size):
-    cropped_images = [torchvision.transforms.RandomCrop(crop_size)(image) for image in images]
-    return cropped_images
+class GroupResize(object):
+    def __init__(self, size):
+        self.worker = torchvision.transforms.Resize(size)
+
+    def __call__(self, images):
+        return [self.worker(image) for image in images]
 
 
-def test_crop(images, crop_size, num_crops):
-    """
-    Return cropped images with crop_size.
+class GroupTenCrop(object):
+    def __init__(self, crop_size):
+        self.worker = torchvision.transforms.TenCrop(crop_size)
 
-    Args:
-        images (list): Input images.
-        crop_size (int): Cropped image's size.
-        num_crops (int): Must be 10, 3, or 1, representing ten-crop, three-crop and center-crop.
+    def __call__(self, images):
+        assert min(width, height) == crop_size, "Before ten-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupTenCrop(crop_size)' in self.transforms"
 
-    Returns:
-        list: The cropped images.
-    """
-    cropped_images = []
-    if num_crops == 1:
+        cropped_images = list()
         for image in images:
-            cropped_images += center_crop(image, crop_size)
-    elif num_crops == 3:
+            cropped_images += list(self.worker(image))
+
+        return cropped_images
+
+
+class GroupThreeCrop(object):
+    def __init__(self, crop_size, flip):
+        self.crop_size = (crop_size, crop_size) if isinstance(crop_size, int) else crop_size
+
+    def __call__(self, images):
+        width, height = images[0].size
+        assert min(width, height) == crop_size, "Before three-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupThreeCrop(crop_size)' in self.transforms"
+
+        cropped_width = crop_size
+        cropped_height = crop_size
+
+        # if width < height, then width == crop_size, width_step = 0
+        # if height < width, then height == crop_size, height_step = 0
+        width_step = (width - cropped_width) // 2
+        height_step = (height - cropped_height) // 2
+
+        offsets = list()
+        offsets.append((0 * width_step, 0 * height_step))  # left or top
+        offsets.append((1 * width_step, 1 * height_step))  # mid or center
+        offsets.append((2 * width_step, 2 * height_step))  # right or bottom
+
+        cropped_images = list()
+
         for image in images:
-            cropped_images += three_crop(image, crop_size)
-    elif num_crops == 10:
-        for image in images:
-            cropped_images += ten_crop(image, crop_size)
-    else:
-        raise ValueError("num_crops must be 1, 3 or 10, means center crop, three crop and ten crop.")
+            for w, h in offsets:
+                cropped_image = image.crop((w, h, w + width_step, h + height_step))
+                cropped_images.append(cropped_image)
 
-    return cropped_images
+        return cropped_images
 
 
-class GroupNormalize(object):
+class GroupToTensor(object):
+    def __init__(self):
+        self.worker = torchvision.transforms.ToTensor()
+
+    def __call__(self, images):
+        images = [self.worker(image) for image in images]
+        return torch.stack(images)  # from list to tensor with shape (num_frames, C, H, W)
+
+
+class GroupBatchNormalize(object):
     def __init__(self, mean, std):
-        self.mean = mean
-        self.std = std
+        self.worker = torchvision.transforms.Normalize(mean, std)
 
-    def __call__(self, tensor):
-        if isinstance(tensor, list):
-            size = tensor[0].size()
-        else:
-            size = tensor.size()
+    def __call__(self, tensors):
+        return self.worker(tensors)
 
-        rep_mean = self.mean * (size[0]//len(self.mean))
-        rep_std = self.std * (size[0]//len(self.std))
 
-        for t, m, s in zip(tensor, rep_mean, rep_std):
-            t.sub_(m).div_(s)
+class GroupRandomMultiScaleCrop(object):
+    def __init__(self, input_size, scales=None):
+        torchvision.transforms.random
+        self.input_size = [input_size, input_size] if isinstance(input_size, int) else input_size
+        self.scales = [1, .875, .75, .66] if scales is None else scales
 
-        return tensor
+    def __call__(self, images):
+        image_size = images[0].size
+
+        w, h, w_step, h_step = self._sample_crop_size(image_size)
+        cropped_images = [image.crop((w, h, w + w_step, h + h_step)) for image in images]
+        output_images = [image.resize((self.input_size[0], self.input[1]), Image.BILINEAR) for image in images]
+
+        return output_images
+
+    def _sample_crop_size(self, img_size):
+        image_w, image_h = img_size[0], img_size[1]
+
+        base_size = min(image_w, image_h)
+        crop_sizes = [int(base_size * scale) for scale in self.scales]
+        crop_w = [self.input_size[0] if abs(crop_size - self.input_size[0]) < 3 else crop_size for crop_size in crop_sizes]
+        crop_h = [self.input_size[1] if abs(crop_size - self.input_size[1]) < 3 else crop_size for crop_size in crop_sizes]
+
+        pairs = []
+        for i, h in enumerate(crop_h):
+            for j, w in enumerate(crop_w):
+                if abs(i - j) <= 1:
+                    pairs.append((w, h))
+
+        crop_pair = random.choice(pairs)
+        w_offset, h_offset = self._sample_fix_offset(image_w, image_h, crop_pair[0], crop_pair[1])
+
+        return crop_pair[0], crop_pair[1], w_offset, h_offset
+
+
+    def _sample_fix_offset(self, image_w, image_h, crop_w, crop_h):
+        offsets = self.fill_fix_offset(image_w, image_h, crop_w, crop_h)
+        return random.choice(offsets)
+
+    @staticmethod
+    def fill_fix_offset(more_fix_crop, image_w, image_h, crop_w, crop_h):
+        w_step = (image_w - crop_w) // 4
+        h_step = (image_h - crop_h) // 4
+
+        ret = list()
+        ret.append((0, 0))  # upper left
+        ret.append((4 * w_step, 0))  # upper right
+        ret.append((0, 4 * h_step))  # lower left
+        ret.append((4 * w_step, 4 * h_step))  # lower right
+        ret.append((2 * w_step, 2 * h_step))  # center
+
+        ret.append((0, 2 * h_step))  # center left
+        ret.append((4 * w_step, 2 * h_step))  # center right
+        ret.append((2 * w_step, 4 * h_step))  # lower center
+        ret.append((2 * w_step, 0 * h_step))  # upper center
+
+        ret.append((1 * w_step, 1 * h_step))  # upper left quarter
+        ret.append((3 * w_step, 1 * h_step))  # upper right quarter
+        ret.append((1 * w_step, 3 * h_step))  # lower left quarter
+        ret.append((3 * w_step, 3 * h_step))  # lower righ quarter
+
+        return ret

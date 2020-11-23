@@ -64,23 +64,6 @@ class TSN(nn.Module):
         self.pretrained = pretrained
         self.softmax = nn.Softmax(dim=1)  # if discard `dim=1`, there is warning
 
-        print(("""
-        Initializing TSN with backbone: {},
-        TSN Configurations:
-            num_frames: {},
-            consensus_mode: {},
-            dropout_ratio: {},
-            pretrained: {}
-        """.format(backbone, num_frames, consensus_type, dropout, pretrained)))
-
-        if "tsm" in backbone:
-            print(("""
-            Initializing TSM Module:
-            TSM Configurations:
-                shift_div: {},
-                shift_mode: {},
-            """.format(shift_div, shift_mode)))
-
         self._prepare_backbone(backbone)
         self._update_fc(num_classes)
 
@@ -143,7 +126,6 @@ class TSN(nn.Module):
             mode (bool): Whether train mode or not.
         """
         super(TSN, self).train(mode)
-        print("Freezing BatchNorm2D expect the first one.")
         cnt = 0
         for m in self.backbone.modules():
             if isinstance(m, nn.BatchNorm2d):

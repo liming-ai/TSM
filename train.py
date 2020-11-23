@@ -15,18 +15,18 @@ from tsn import TSN
 from dataset import UCF101Dataset
 from utils import AverageMeter, accuracy
 from logger import Logger
-from transforms import GroupNormalize
+from transforms import *
 
 best_top1_acc = 0
-# iteration = 0
+iteration = 0
 
 def main():
     global best_top1_acc, iteration, logger, args
 
     args = parser.parse_args()
-    writer = SummaryWriter()
 
     dir_name = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
+    writer = SummaryWriter(log_dir=os.path.join(args.output_dir, dir_name, "runs"))
 
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
@@ -40,26 +40,41 @@ def main():
     log_name = args.backbone + ".log"
     logger = Logger(os.path.join(args.output_dir, dir_name, "logs", log_name))
 
-    model = TSN(num_classes=args.num_classes, num_frames=args.num_frames, backbone=args.backbone,
-                consensus_type=args.consensus_type, dropout=args.dropout, shift_div=args.shift_div,
-                shift_mode=args.shift_mode, pretrained=args.pretrained)
+    logger.info(args)
+
+    model = TSN(num_classes=args.num_classes, num_frames=args.num_segments * args.num_frames,
+                backbone=args.backbone, consensus_type=args.consensus_type, dropout=args.dropout,
+                shift_div=args.shift_div, shift_mode=args.shift_mode, pretrained=args.pretrained)
+
     model = nn.DataParallel(model, device_ids=args.gpus).cuda()
+
+    if args.load_from_github:
+        model = load_state_dict(model, args.state_dict_path)
 
     optimizer = optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     criterion = torch.nn.CrossEntropyLoss().cuda()
 
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        # GroupNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    train_transforms = torchvision.transforms.Compose([
+        GroupRandomMultiScaleCrop(224),
+        GroupRandomHorizontalFlip(),
+        GroupToTensor(),
+        GroupBatchNormalize(),
     ])
 
-    train_dataset = UCF101Dataset(args.data_path, args.train_anno_path, transforms=None, mode='train',
+    val_transform = torchvision.transforms.Compose([
+        GroupResize(args.crop_size),
+        GroupCenterCrop(args.crop_size),
+        GroupToTensor(),
+        GroupBatchNormalize(),
+    ])
+
+    train_dataset = UCF101Dataset(args.data_path, args.train_anno_path, transforms=transforms, mode='train',
                                   sample_strategy=args.sample_strategy, num_frames=args.num_frames,
                                   sample_interval=args.sample_interval, num_segments=args.num_segments,
                                   test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
                                   crop_size=args.crop_size, random_shift=args.random_shift)
 
-    val_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=None, mode='val',
+    val_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='val',
                                 sample_strategy=args.sample_strategy, num_frames=args.num_frames,
                                 sample_interval=args.sample_interval, num_segments=args.num_segments,
                                 test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
@@ -77,7 +92,6 @@ def main():
 
     for epoch in range(args.epochs):
         adjust_learning_rate(optimizer, epoch, args.lr_type, args.lr_steps)
-
         train(train_loader, model, criterion, optimizer, epoch, writer)
 
         if (epoch + 1) % args.eval_freq == 0 or epoch == args.epochs - 1:
@@ -106,11 +120,15 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
     last_time = time.time()
 
     for i, (data, label) in enumerate(train_loader):
-        # iteration += 1
+        global iteration
+        iteration += 1
         # data loading time
         data_time.update(time.time() - last_time)
-        data = data.cuda()
+        data = data.cuda()  # (N, T, C, H, W)
         label = label.cuda()
+
+        n, t, c, h, w = data.shape
+        data = data.view(-1, c, h, w)
 
         output = model(data)
         loss = criterion(output, label)
@@ -130,18 +148,18 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
         message = ('Epoch: [{}][{}/{}], lr: {lr: .5f}\t'
                    'Batch Training Time: {batch_time.value: .3f}\t'
                    'Data Loading Time: {data_time.value: .3f}\t'
-                   'Loss: {loss.value: .4f}\t'
-                   'Acc@1: {top1.value: .3f}\t'
-                   'Acc@5: {top5.value: .3f}\t'
+                   'Loss: {loss.avg: .4f} ({loss.value: .4f})\t'
+                   'Acc@1: {top1.avg: .3f} ({top1.value: .3f})\t'
+                   'Acc@5: {top5.avg: .3f} ({top5.value: .3f})\t'
         ).format(epoch, i, len(train_loader), lr=optimizer.param_groups[-1]['lr'],
                  batch_time=batch_time, data_time=data_time, loss=losses,
                  top1=top1, top5=top5
         )
         logger.info(message)
 
-        # writer.add_scalar('loss/train/iteration', losses.avg, iteration)
-        # writer.add_scalar('top1_acc/train/iteration', top1.avg, iteration)
-        # writer.add_scalar('top5_acc/train/iteration', top5.avg, iteration)
+        writer.add_scalar('loss/train/iteration', losses.avg, iteration)
+        writer.add_scalar('top1_acc/train/iteration', top1.avg, iteration)
+        writer.add_scalar('top5_acc/train/iteration', top5.avg, iteration)
 
     writer.add_scalar('loss/train/epoch', losses.avg, epoch)
     writer.add_scalar('top1_acc/train/epoch', top1.avg, epoch)
@@ -164,6 +182,9 @@ def validate(val_loader, model, criterion, optimizer, epoch, writer):
             data = data.cuda()
             label = label.cuda()
 
+            n, t, c, h, w = data.shape
+            data = data.view(-1, c, h, w)
+
             output = model(data)
             loss = criterion(output, label)
 
@@ -172,7 +193,8 @@ def validate(val_loader, model, criterion, optimizer, epoch, writer):
             top1.update(top1_acc.item(), data.size(0))
             top5.update(top5_acc.item(), data.size(0))
 
-    message = ('Testing Results: Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f} Loss {loss.avg:.5f}'.format(top1=top1, top5=top5, loss=losses))
+    message = ('Testing Results: Acc@1 {top1.avg:.3f}\t Acc@5 {top5.avg:.3f}\t Loss {loss.avg:.5f}'.format(top1=top1, top5=top5, loss=losses))
+    logger.info("================================================================")
     logger.info(message)
 
     writer.add_scalar('loss/val/epoch', losses.avg, epoch)
@@ -180,6 +202,23 @@ def validate(val_loader, model, criterion, optimizer, epoch, writer):
     writer.add_scalar('top5_acc/val/epoch', top5.avg, epoch)
 
     return top1.avg
+
+
+def load_state_dict(model, state_dict_path):
+    logger.info("Loading pretrained model from {}".format(state_dict_path))
+    pretrained_model = torch.load(state_dict_path)
+
+    model_names = list(model.state_dict())
+    pretrained_model_names = list(pretrained_model['state_dict'].keys())
+
+    tmp = model.state_dict()
+    # expect the final fully connected layer's weight and bias
+    for i in range(len(pretrained_model_names) - 2):
+        tmp[model_names[i]] = pretrained_model['state_dict'][pretrained_model_names[i]]
+
+    model.load_state_dict(tmp)
+
+    return model
 
 
 def adjust_learning_rate(optimizer, epoch, lr_type, lr_steps):
@@ -194,14 +233,19 @@ def adjust_learning_rate(optimizer, epoch, lr_type, lr_steps):
         decay = args.weight_decay
     else:
         raise NotImplementedError
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+        param_group['weight_decay'] = decay
 
 
 def save_checkpoint(state, is_best, epoch, dir_name):
     file_name = "{}_{}_{}_{}_{}_{}.pth.tar".format(args.backbone, epoch, args.sample_strategy, args.num_frames, args.sample_interval, args.num_segments)
-    torch.save(state, os.path.join(args.output_dir, dir_name, "checkpoints", filename))
-    logger.info("{} has been saved in {}".format(file_name, os.path.join(args.output_dir, dir_name, "checkpoints", filename)))
+    torch.save(state, os.path.join(args.output_dir, dir_name, "checkpoints", file_name))
+    logger.info("{} has been saved in {}".format(file_name, os.path.join(args.output_dir, dir_name, "checkpoints", file_name)))
     if is_best:
-        shutil.copyfile(file_name, file_name.replace('pth.tar', 'best.pth.tar'))
+        shutil.copyfile(os.path.join(args.output_dir, dir_name, "checkpoints", file_name), os.path.join(args.output_dir, dir_name, "checkpoints", 'best.pth.tar'))
+        logger.info("Saved best acc@1 checkpoint")
+    logger.info("================================================================")
 
 
 if __name__ == "__main__":
