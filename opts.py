@@ -23,7 +23,7 @@ parser.add_argument('--consensus_type', type=str, default="avg")
 parser.add_argument('--shift_div', type=int, default=8)
 parser.add_argument('--shift_mode', type=str, default="residual")
 parser.add_argument('--num_classes', type=int, default=101)
-parser.add_argument('--load_from_github', type=bool, default=True)
+parser.add_argument('--load_from_github', type=bool, default=False)
 parser.add_argument('--state_dict_path', type=str, default="./checkpoints/TSM_kinetics_RGB_resnet50_shift8_blockres_avg_segment8_e50.pth")
 
 parser.add_argument('--epochs', type=int, default=25)

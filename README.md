@@ -73,4 +73,12 @@ You can set these parameters in terminal too:
 python train.py --backbone "resnet50_tsm" --batch_size 32 --epochs 25
 ```
 
+We also support pretrained models from [TSM pretrained models](https://github.com/mit-han-lab/temporal-shift-module#pretrained-models)
+
 Please read the code in [ots.py](opts.py) for more details.
+
+# Analysis
+You can find the training logs in [output_dir](output_dir/logs), and use tensorboard to analyze the results by running:
+```bash
+tensorboard --logdir output_dir
+```
