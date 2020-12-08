@@ -19,7 +19,7 @@ class GroupCenterCrop(object):
     def __init__(self, crop_size):
         self.worker = torchvision.transforms.CenterCrop(crop_size)
 
-    def __call__(self, images)
+    def __call__(self, images):
         return [self.worker(image) for image in images]
 
 
@@ -42,9 +42,11 @@ class GroupResize(object):
 class GroupTenCrop(object):
     def __init__(self, crop_size):
         self.worker = torchvision.transforms.TenCrop(crop_size)
+        self.crop_size = crop_size
 
     def __call__(self, images):
-        assert min(width, height) == crop_size, "Before ten-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupTenCrop(crop_size)' in self.transforms"
+        width, height = images[0].size
+        assert min(width, height) == self.crop_size, "Before ten-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupTenCrop(crop_size)' in self.transforms"
 
         cropped_images = list()
         for image in images:
@@ -54,20 +56,20 @@ class GroupTenCrop(object):
 
 
 class GroupThreeCrop(object):
-    def __init__(self, crop_size, flip):
-        self.crop_size = (crop_size, crop_size) if isinstance(crop_size, int) else crop_size
+    def __init__(self, crop_size):
+        self.crop_size = crop_size
 
     def __call__(self, images):
         width, height = images[0].size
-        assert min(width, height) == crop_size, "Before three-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupThreeCrop(crop_size)' in self.transforms"
+        assert min(width, height) == self.crop_size, "Before three-crop, image's size must match crop_size, please add 'GroupResize(crop_size)' before 'GroupThreeCrop(crop_size)' in self.transforms"
 
-        cropped_width = crop_size
-        cropped_height = crop_size
+        cropped_width = self.crop_size
+        cropped_height = self.crop_size
 
         # if width < height, then width == crop_size, width_step = 0
         # if height < width, then height == crop_size, height_step = 0
-        width_step = (width - cropped_width) // 2
-        height_step = (height - cropped_height) // 2
+        width_step = (width - cropped_width) // 2  # (341-256)//2
+        height_step = (height - cropped_height) // 2 # 0
 
         offsets = list()
         offsets.append((0 * width_step, 0 * height_step))  # left or top
@@ -76,9 +78,9 @@ class GroupThreeCrop(object):
 
         cropped_images = list()
 
-        for image in images:
-            for w, h in offsets:
-                cropped_image = image.crop((w, h, w + width_step, h + height_step))
+        for w, h in offsets:
+            for image in images:
+                cropped_image = image.crop((w, h, w + cropped_width, h + cropped_height))
                 cropped_images.append(cropped_image)
 
         return cropped_images
@@ -103,7 +105,6 @@ class GroupBatchNormalize(object):
 
 class GroupRandomMultiScaleCrop(object):
     def __init__(self, input_size, scales=None):
-        torchvision.transforms.random
         self.input_size = [input_size, input_size] if isinstance(input_size, int) else input_size
         self.scales = [1, .875, .75, .66] if scales is None else scales
 
@@ -112,7 +113,7 @@ class GroupRandomMultiScaleCrop(object):
 
         w, h, w_step, h_step = self._sample_crop_size(image_size)
         cropped_images = [image.crop((w, h, w + w_step, h + h_step)) for image in images]
-        output_images = [image.resize((self.input_size[0], self.input[1]), Image.BILINEAR) for image in images]
+        output_images = [image.resize((self.input_size[0], self.input_size[1]), Image.BILINEAR) for image in images]
 
         return output_images
 
@@ -141,7 +142,7 @@ class GroupRandomMultiScaleCrop(object):
         return random.choice(offsets)
 
     @staticmethod
-    def fill_fix_offset(more_fix_crop, image_w, image_h, crop_w, crop_h):
+    def fill_fix_offset(image_w, image_h, crop_w, crop_h):
         w_step = (image_w - crop_w) // 4
         h_step = (image_h - crop_h) // 4
 

@@ -6,7 +6,8 @@ import torchvision
 from tsn import TSN
 from dataset import UCF101Dataset
 from utils import AverageMeter, accuracy
-from transforms import GroupNormalize
+from transforms import *
+from torch.utils.tensorboard import SummaryWriter
 
 def main():
     args = parser.parse_args()
@@ -16,12 +17,14 @@ def main():
                 shift_mode=args.shift_mode, pretrained=args.pretrained)
 
     model = nn.DataParallel(model, device_ids=args.gpus).cuda()
-    pretrained_state_dict = torch.load("output_dir/2020-11-23_15_00_09/checkpoints/resnet50_tsm_12_sparse_1_1_8.pth.tar")
+    pretrained_state_dict = torch.load("output_dir/2020-11-24_13_21_50/checkpoints/resnet50_tsm_25_sparse_1_1_8.pth.tar")
     model.load_state_dict(pretrained_state_dict['state_dict'])
 
     transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        GroupNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        GroupResize(args.crop_size),
+        GroupThreeCrop(args.crop_size),
+        GroupToTensor(),
+        GroupBatchNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
     test_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='test',
@@ -31,7 +34,7 @@ def main():
                                   crop_size=args.crop_size, random_shift=args.random_shift)
 
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=True,
+        test_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=True, drop_last=True
     )
 
@@ -51,7 +54,7 @@ def main():
 
             views = [data[:, num_frames_per_video*t:num_frames_per_video*(t+1), :, :, :] for t in range(num_views)]
 
-            outputs = [model(view.reshape(-1, c, h, w)) for view in views]
+            outputs = [torch.nn.functional.softmax(model(view.reshape(-1, c, h, w))) for view in views]
             output = sum(outputs) / len(outputs)
 
             top1_acc, top5_acc = accuracy(output, label, topk=(1, 5))
@@ -63,3 +66,24 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # args = parser.parse_args()
+    # writer = SummaryWriter()
+
+    # transforms = torchvision.transforms.Compose([
+    #     GroupResize(args.crop_size),
+    #     GroupThreeCrop(args.crop_size),
+    #     GroupToTensor(),
+    #     # GroupBatchNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    # ])
+
+    # test_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='test',
+    #                               sample_strategy=args.sample_strategy, num_frames=args.num_frames,
+    #                               sample_interval=args.sample_interval, num_segments=args.num_segments,
+    #                               test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
+    #                               crop_size=args.crop_size, random_shift=args.random_shift)
+
+
+    # data, label = test_dataset.__getitem__(222)
+    # print(data.shape)
+    # writer.add_images('mine 1 clips 3 crops', data)
+    # writer.close()

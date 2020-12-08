@@ -53,28 +53,30 @@ def main():
 
     optimizer = optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     criterion = torch.nn.CrossEntropyLoss().cuda()
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_steps)
 
     train_transforms = torchvision.transforms.Compose([
-        GroupRandomMultiScaleCrop(224),
+        GroupRandomMultiScaleCrop(args.crop_size),
+        GroupResize(args.crop_size),
         GroupRandomHorizontalFlip(),
         GroupToTensor(),
-        GroupBatchNormalize(),
+        GroupBatchNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
-    val_transform = torchvision.transforms.Compose([
+    val_transforms = torchvision.transforms.Compose([
         GroupResize(args.crop_size),
         GroupCenterCrop(args.crop_size),
         GroupToTensor(),
-        GroupBatchNormalize(),
+        GroupBatchNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
-    train_dataset = UCF101Dataset(args.data_path, args.train_anno_path, transforms=transforms, mode='train',
+    train_dataset = UCF101Dataset(args.data_path, args.train_anno_path, transforms=train_transforms, mode='train',
                                   sample_strategy=args.sample_strategy, num_frames=args.num_frames,
                                   sample_interval=args.sample_interval, num_segments=args.num_segments,
                                   test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
                                   crop_size=args.crop_size, random_shift=args.random_shift)
 
-    val_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='val',
+    val_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=val_transforms, mode='val',
                                 sample_strategy=args.sample_strategy, num_frames=args.num_frames,
                                 sample_interval=args.sample_interval, num_segments=args.num_segments,
                                 test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
@@ -91,13 +93,14 @@ def main():
     )
 
     for epoch in range(args.epochs):
-        adjust_learning_rate(optimizer, epoch, args.lr_type, args.lr_steps)
         train(train_loader, model, criterion, optimizer, epoch, writer)
 
         if (epoch + 1) % args.eval_freq == 0 or epoch == args.epochs - 1:
             top1_acc = validate(val_loader, model, criterion, optimizer, epoch, writer)
             is_best = top1_acc > best_top1_acc
             best_top1_acc = max(top1_acc, best_top1_acc)
+
+        lr_scheduler.step()
 
         save_checkpoint({
                 'epoch': epoch + 1,
@@ -139,6 +142,10 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
         top5.update(top5_acc.item(), data.size(0))
 
         loss.backward()
+
+        if args.clip_gradient is not None:
+            total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_gradient)
+
         optimizer.step()
         optimizer.zero_grad()
 
@@ -219,23 +226,6 @@ def load_state_dict(model, state_dict_path):
     model.load_state_dict(tmp)
 
     return model
-
-
-def adjust_learning_rate(optimizer, epoch, lr_type, lr_steps):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    if lr_type == 'step':
-        decay = 0.1 ** (sum(epoch >= np.array(lr_steps)))
-        lr = args.lr * decay
-        decay = args.weight_decay
-    elif lr_type == 'cos':
-        import math
-        lr = 0.5 * args.lr * (1 + math.cos(math.pi * epoch / args.epochs))
-        decay = args.weight_decay
-    else:
-        raise NotImplementedError
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-        param_group['weight_decay'] = decay
 
 
 def save_checkpoint(state, is_best, epoch, dir_name):

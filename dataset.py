@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 from PIL import Image
 import torchvision
-from transforms import random_crop, test_crop, GroupNormalize
+from transforms import *
 
 
 # logger = logging.get_logger(__name__)
@@ -239,22 +239,24 @@ class UCF101Dataset(Dataset):
         if self.transforms is not None:
             images = self.transforms(images)
 
-        return images
+        return images, record.label
 
 
 if __name__ == "__main__":
     from opts import parser
     args = parser.parse_args()
     transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        GroupNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        GroupResize(args.crop_size),
+        GroupThreeCrop(args.crop_size),
+        GroupToTensor(),
+        GroupBatchNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
-    test_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='test',
-                                 sample_strategy=args.sample_strategy, num_frames=args.num_frames,
-                                 sample_interval=args.sample_interval, num_segments=args.num_segments,
-                                 test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
-                                 crop_size=args.crop_size, random_shift=args.random_shift)
 
+    test_dataset = UCF101Dataset(args.data_path, args.val_anno_path, transforms=transforms, mode='test',
+                                  sample_strategy=args.sample_strategy, num_frames=args.num_frames,
+                                  sample_interval=args.sample_interval, num_segments=args.num_segments,
+                                  test_num_clips=args.test_num_clips, test_num_crops=args.test_num_crops,
+                                  crop_size=args.crop_size, random_shift=args.random_shift)
     data, label = test_dataset.__getitem__(222)
 
     print(data.shape)
