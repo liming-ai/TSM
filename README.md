@@ -78,7 +78,7 @@ We also support pretrained models from [TSM pretrained models](https://github.co
 python train.py --load_from_github True --state_dict_path path_to_pretrain_model
 ```
 
-Please read the code in [ots.py](opts.py) for more details.
+Please read the code in [opts.py](opts.py) for more details.
 
 # Analysis
 You can find the training logs in [output_dir](output_dir/logs), and use tensorboard to analyze the results by running:
