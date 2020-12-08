@@ -73,7 +73,10 @@ You can set these parameters in terminal too:
 python train.py --backbone "resnet50_tsm" --batch_size 32 --epochs 25
 ```
 
-We also support pretrained models from [TSM pretrained models](https://github.com/mit-han-lab/temporal-shift-module#pretrained-models)
+We also support pretrained models from [TSM pretrained models](https://github.com/mit-han-lab/temporal-shift-module#pretrained-models), just add code in terminal like this:
+```bash
+python train.py --load_from_github True --state_dict_path path_to_pretrain_model
+```
 
 Please read the code in [ots.py](opts.py) for more details.
 
